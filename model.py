@@ -2,9 +2,15 @@ import os
 import time
 import warnings
 import json
+import collections
+import pathlib
 
 from download_cropped_vids import dwnld_trim_crop_pipeline_indices
+from download_cropped_vids import dwnld_trim_crop_pipeline_range
 from preprocess_clips import preprocess_vids_of_indices_instances
+
+from frame_generator import FrameGenerator
+from optical_flow_generator import OpticalFlowStream
 
 import numpy as np
 import tensorflow as tf
@@ -34,7 +40,6 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import LabelBinarizer
 
 
-
 MODEL_DIR = 'model'
 
 DATA_DIR = 'data'
@@ -44,11 +49,13 @@ DS_CLASSES_PATH = os.path.join(DATASET_DIR, 'MSASL_classes.json')
 DS_SYNONYMS_DATA_PATH = os.path.join(DATASET_DIR, 'MSASL_synonyms.json')
 TEST_DATA_PATH = os.path.join(DATASET_DIR, 'MSASL_test.json')
 TRAIN_DATA_PATH = os.path.join(DATASET_DIR, 'MSASL_train.json')
+NEW_TRAIN_DATA_PATH = 'cleansed_train_ds.json'
 VAL_DATA_PATH = os.path.join(DATASET_DIR, 'MSASL_val.json')
 
 ASSETS_DIR = os.path.join(DATA_DIR, 'assets')
 
-INDICES_INSTANCES_OF_SPECIFIC_CLASSES_FILE_PATH = os.path.join(ASSETS_DIR, 'indices_instances_specific_classes.npy')
+INDICES_INSTANCES_OF_SPECIFIC_CLASSES_FILE_PATH = os.path.join(
+    ASSETS_DIR, 'indices_instances_specific_classes.npy')
 
 VIDEOS_DIR = os.path.join(DATA_DIR, 'videos')
 
@@ -57,7 +64,8 @@ OUTPUT_FRAMES_DIR = os.path.join(OUTPUT_DIR, 'frames')
 NPY_FILES_DIR = os.path.join(OUTPUT_DIR, 'npy_files')
 
 MODEL_ARCH_IMG_PATH = os.path.join(ASSETS_DIR, 'i3d_architecture.png')
-INCEPTION_MODULE_ARCH_IMG_PATH = os.path.join(ASSETS_DIR, 'inception_module_architecture.png')
+INCEPTION_MODULE_ARCH_IMG_PATH = os.path.join(
+    ASSETS_DIR, 'inception_module_architecture.png')
 
 CROPPED_VIDS_DIR = os.path.join(VIDEOS_DIR, 'cropped')
 FRAME_RATE = 25
@@ -65,23 +73,25 @@ NUM_FRAMES_TO_EXTRACT = 74
 SMALLEST_DIM = 256
 IMAGE_CROP_SIZE = 224
 
-WEIGHTS_NAME = ['rgb_kinetics_only', 'flow_kinetics_only', 'rgb_imagenet_and_kinetics', 'flow_imagenet_and_kinetics']
+WEIGHTS_NAME = ['rgb_kinetics_only', 'flow_kinetics_only',
+                'rgb_imagenet_and_kinetics', 'flow_imagenet_and_kinetics']
 
 # path to pretrained models with top (classification layer)
 WEIGHTS_PATH = {
-    'rgb_kinetics_only' : 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/rgb_inception_i3d_kinetics_only_tf_dim_ordering_tf_kernels.h5',
-    'flow_kinetics_only' : 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/flow_inception_i3d_kinetics_only_tf_dim_ordering_tf_kernels.h5',
-    'rgb_imagenet_and_kinetics' : 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/rgb_inception_i3d_imagenet_and_kinetics_tf_dim_ordering_tf_kernels.h5',
-    'flow_imagenet_and_kinetics' : 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/flow_inception_i3d_imagenet_and_kinetics_tf_dim_ordering_tf_kernels.h5'
+    'rgb_kinetics_only': 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/rgb_inception_i3d_kinetics_only_tf_dim_ordering_tf_kernels.h5',
+    'flow_kinetics_only': 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/flow_inception_i3d_kinetics_only_tf_dim_ordering_tf_kernels.h5',
+    'rgb_imagenet_and_kinetics': 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/rgb_inception_i3d_imagenet_and_kinetics_tf_dim_ordering_tf_kernels.h5',
+    'flow_imagenet_and_kinetics': 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/flow_inception_i3d_imagenet_and_kinetics_tf_dim_ordering_tf_kernels.h5'
 }
 
 # path to pretrained models with no top (no classification layer)
 WEIGHTS_PATH_NO_TOP = {
-    'rgb_kinetics_only' : 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/rgb_inception_i3d_kinetics_only_tf_dim_ordering_tf_kernels_no_top.h5',
-    'flow_kinetics_only' : 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/flow_inception_i3d_kinetics_only_tf_dim_ordering_tf_kernels_no_top.h5',
-    'rgb_imagenet_and_kinetics' : 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/rgb_inception_i3d_imagenet_and_kinetics_tf_dim_ordering_tf_kernels_no_top.h5',
-    'flow_imagenet_and_kinetics' : 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/flow_inception_i3d_imagenet_and_kinetics_tf_dim_ordering_tf_kernels_no_top.h5'
+    'rgb_kinetics_only': 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/rgb_inception_i3d_kinetics_only_tf_dim_ordering_tf_kernels_no_top.h5',
+    'flow_kinetics_only': 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/flow_inception_i3d_kinetics_only_tf_dim_ordering_tf_kernels_no_top.h5',
+    'rgb_imagenet_and_kinetics': 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/rgb_inception_i3d_imagenet_and_kinetics_tf_dim_ordering_tf_kernels_no_top.h5',
+    'flow_imagenet_and_kinetics': 'https://github.com/dlpbc/keras-kinetics-i3d/releases/download/v0.2/flow_inception_i3d_imagenet_and_kinetics_tf_dim_ordering_tf_kernels_no_top.h5'
 }
+
 
 def _obtain_input_shape(input_shape,
                         default_frame_size,
@@ -123,19 +133,23 @@ def _obtain_input_shape(input_shape,
                     'This model usually expects 1 or 3 input channels. '
                     'However, it was passed an input_shape with ' +
                     str(input_shape[0]) + ' input channels.')
-            default_shape = (input_shape[0], default_num_frames, default_frame_size, default_frame_size)
+            default_shape = (
+                input_shape[0], default_num_frames, default_frame_size, default_frame_size)
         else:
             if input_shape[-1] not in {1, 3}:
                 warnings.warn(
                     'This model usually expects 1 or 3 input channels. '
                     'However, it was passed an input_shape with ' +
                     str(input_shape[-1]) + ' input channels.')
-            default_shape = (default_num_frames, default_frame_size, default_frame_size, input_shape[-1])
+            default_shape = (default_num_frames, default_frame_size,
+                             default_frame_size, input_shape[-1])
     else:
         if data_format == 'channels_first':
-            default_shape = (3, default_num_frames, default_frame_size, default_frame_size)
+            default_shape = (3, default_num_frames,
+                             default_frame_size, default_frame_size)
         else:
-            default_shape = (default_num_frames, default_frame_size, default_frame_size, 3)
+            default_shape = (default_num_frames,
+                             default_frame_size, default_frame_size, 3)
     if (weights == 'kinetics_only' or weights == 'imagenet_and_kinetics') and require_flatten:
         if input_shape is not None:
             if input_shape != default_shape:
@@ -163,7 +177,8 @@ def _obtain_input_shape(input_shape,
                 if ((input_shape[2] is not None and input_shape[2] < min_frame_size) or
                    (input_shape[3] is not None and input_shape[3] < min_frame_size)):
                     raise ValueError('Input size must be at least ' +
-                                     str(min_frame_size) + 'x' + str(min_frame_size) + '; got '
+                                     str(min_frame_size) + 'x' +
+                                     str(min_frame_size) + '; got '
                                      '`input_shape=' + str(input_shape) + '`')
         else:
             if input_shape is not None:
@@ -182,7 +197,8 @@ def _obtain_input_shape(input_shape,
                 if ((input_shape[1] is not None and input_shape[1] < min_frame_size) or
                    (input_shape[2] is not None and input_shape[2] < min_frame_size)):
                     raise ValueError('Input size must be at least ' +
-                                     str(min_frame_size) + 'x' + str(min_frame_size) + '; got '
+                                     str(min_frame_size) + 'x' +
+                                     str(min_frame_size) + '; got '
                                      '`input_shape=' + str(input_shape) + '`')
     else:
         if require_flatten:
@@ -199,6 +215,7 @@ def _obtain_input_shape(input_shape,
                              'Got `input_shape=' + str(input_shape) + '`')
     return input_shape
 
+
 def conv3d_bn(x,
               filters,
               num_frames,
@@ -206,9 +223,9 @@ def conv3d_bn(x,
               num_col,
               padding='same',
               strides=(1, 1, 1),
-              use_bias = False,
-              use_activation_fn = True,
-              use_bn = True,
+              use_bias=False,
+              use_activation_fn=True,
+              use_bn=True,
               name=None):
     """Utility function to apply conv3d + BN.
 
@@ -258,12 +275,12 @@ def conv3d_bn(x,
 
 
 def Inception_Inflated3d(include_top=True,
-                weights=None,
-                input_tensor=None,
-                input_shape=None,
-                dropout_prob=0.0,
-                endpoint_logit=True,
-                classes=400):
+                         weights=None,
+                         input_tensor=None,
+                         input_shape=None,
+                         dropout_prob=0.0,
+                         endpoint_logit=True,
+                         classes=400):
     """Instantiates the Inflated 3D Inception v1 architecture.
 
     Optionally loads weights pre-trained
@@ -320,8 +337,8 @@ def Inception_Inflated3d(include_top=True,
     """
     if not (weights in WEIGHTS_NAME or weights is None or os.path.exists(weights)):
         raise ValueError('The `weights` argument should be either '
-                         '`None` (random initialization) or %s' % 
-                         str(WEIGHTS_NAME) + ' ' 
+                         '`None` (random initialization) or %s' %
+                         str(WEIGHTS_NAME) + ' '
                          'or a valid path to a file containing `weights` values')
 
     if weights in WEIGHTS_NAME and include_top and classes != 400:
@@ -331,8 +348,8 @@ def Inception_Inflated3d(include_top=True,
     # Determine proper input shape
     input_shape = _obtain_input_shape(
         input_shape,
-        default_frame_size=224, 
-        min_frame_size=32, 
+        default_frame_size=224,
+        min_frame_size=32,
         default_num_frames=64,
         min_num_frames=8,
         data_format=K.image_data_format(),
@@ -353,27 +370,39 @@ def Inception_Inflated3d(include_top=True,
         channel_axis = 4
 
     # Downsampling via convolution (spatial and temporal)
-    x = conv3d_bn(img_input, 64, 7, 7, 7, strides=(2, 2, 2), padding='same', name='Conv3d_1a_7x7')
+    x = conv3d_bn(img_input, 64, 7, 7, 7, strides=(
+        2, 2, 2), padding='same', name='Conv3d_1a_7x7')
 
     # Downsampling (spatial only)
-    x = MaxPooling3D((1, 3, 3), strides=(1, 2, 2), padding='same', name='MaxPool2d_2a_3x3')(x)
-    x = conv3d_bn(x, 64, 1, 1, 1, strides=(1, 1, 1), padding='same', name='Conv3d_2b_1x1')
-    x = conv3d_bn(x, 192, 3, 3, 3, strides=(1, 1, 1), padding='same', name='Conv3d_2c_3x3')
+    x = MaxPooling3D((1, 3, 3), strides=(1, 2, 2),
+                     padding='same', name='MaxPool2d_2a_3x3')(x)
+    x = conv3d_bn(x, 64, 1, 1, 1, strides=(1, 1, 1),
+                  padding='same', name='Conv3d_2b_1x1')
+    x = conv3d_bn(x, 192, 3, 3, 3, strides=(1, 1, 1),
+                  padding='same', name='Conv3d_2c_3x3')
 
     # Downsampling (spatial only)
-    x = MaxPooling3D((1, 3, 3), strides=(1, 2, 2), padding='same', name='MaxPool2d_3a_3x3')(x)
+    x = MaxPooling3D((1, 3, 3), strides=(1, 2, 2),
+                     padding='same', name='MaxPool2d_3a_3x3')(x)
 
     # Mixed 3b
-    branch_0 = conv3d_bn(x, 64, 1, 1, 1, padding='same', name='Conv3d_3b_0a_1x1')
+    branch_0 = conv3d_bn(x, 64, 1, 1, 1, padding='same',
+                         name='Conv3d_3b_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 96, 1, 1, 1, padding='same', name='Conv3d_3b_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 128, 3, 3, 3, padding='same', name='Conv3d_3b_1b_3x3')
+    branch_1 = conv3d_bn(x, 96, 1, 1, 1, padding='same',
+                         name='Conv3d_3b_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 128, 3, 3, 3,
+                         padding='same', name='Conv3d_3b_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 16, 1, 1, 1, padding='same', name='Conv3d_3b_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 32, 3, 3, 3, padding='same', name='Conv3d_3b_2b_3x3')
+    branch_2 = conv3d_bn(x, 16, 1, 1, 1, padding='same',
+                         name='Conv3d_3b_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 32, 3, 3, 3,
+                         padding='same', name='Conv3d_3b_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_3b_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 32, 1, 1, 1, padding='same', name='Conv3d_3b_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_3b_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 32, 1, 1, 1,
+                         padding='same', name='Conv3d_3b_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
@@ -381,37 +410,51 @@ def Inception_Inflated3d(include_top=True,
         name='Mixed_3b')
 
     # Mixed 3c
-    branch_0 = conv3d_bn(x, 128, 1, 1, 1, padding='same', name='Conv3d_3c_0a_1x1')
+    branch_0 = conv3d_bn(x, 128, 1, 1, 1, padding='same',
+                         name='Conv3d_3c_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 128, 1, 1, 1, padding='same', name='Conv3d_3c_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 192, 3, 3, 3, padding='same', name='Conv3d_3c_1b_3x3')
+    branch_1 = conv3d_bn(x, 128, 1, 1, 1, padding='same',
+                         name='Conv3d_3c_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 192, 3, 3, 3,
+                         padding='same', name='Conv3d_3c_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 32, 1, 1, 1, padding='same', name='Conv3d_3c_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 96, 3, 3, 3, padding='same', name='Conv3d_3c_2b_3x3')
+    branch_2 = conv3d_bn(x, 32, 1, 1, 1, padding='same',
+                         name='Conv3d_3c_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 96, 3, 3, 3,
+                         padding='same', name='Conv3d_3c_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_3c_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1, padding='same', name='Conv3d_3c_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_3c_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1,
+                         padding='same', name='Conv3d_3c_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
         axis=channel_axis,
         name='Mixed_3c')
 
-
     # Downsampling (spatial and temporal)
-    x = MaxPooling3D((3, 3, 3), strides=(2, 2, 2), padding='same', name='MaxPool2d_4a_3x3')(x)
+    x = MaxPooling3D((3, 3, 3), strides=(2, 2, 2),
+                     padding='same', name='MaxPool2d_4a_3x3')(x)
 
     # Mixed 4b
-    branch_0 = conv3d_bn(x, 192, 1, 1, 1, padding='same', name='Conv3d_4b_0a_1x1')
+    branch_0 = conv3d_bn(x, 192, 1, 1, 1, padding='same',
+                         name='Conv3d_4b_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 96, 1, 1, 1, padding='same', name='Conv3d_4b_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 208, 3, 3, 3, padding='same', name='Conv3d_4b_1b_3x3')
+    branch_1 = conv3d_bn(x, 96, 1, 1, 1, padding='same',
+                         name='Conv3d_4b_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 208, 3, 3, 3,
+                         padding='same', name='Conv3d_4b_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 16, 1, 1, 1, padding='same', name='Conv3d_4b_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 48, 3, 3, 3, padding='same', name='Conv3d_4b_2b_3x3')
+    branch_2 = conv3d_bn(x, 16, 1, 1, 1, padding='same',
+                         name='Conv3d_4b_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 48, 3, 3, 3,
+                         padding='same', name='Conv3d_4b_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_4b_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1, padding='same', name='Conv3d_4b_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_4b_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1,
+                         padding='same', name='Conv3d_4b_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
@@ -419,16 +462,23 @@ def Inception_Inflated3d(include_top=True,
         name='Mixed_4b')
 
     # Mixed 4c
-    branch_0 = conv3d_bn(x, 160, 1, 1, 1, padding='same', name='Conv3d_4c_0a_1x1')
+    branch_0 = conv3d_bn(x, 160, 1, 1, 1, padding='same',
+                         name='Conv3d_4c_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 112, 1, 1, 1, padding='same', name='Conv3d_4c_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 224, 3, 3, 3, padding='same', name='Conv3d_4c_1b_3x3')
+    branch_1 = conv3d_bn(x, 112, 1, 1, 1, padding='same',
+                         name='Conv3d_4c_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 224, 3, 3, 3,
+                         padding='same', name='Conv3d_4c_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 24, 1, 1, 1, padding='same', name='Conv3d_4c_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 64, 3, 3, 3, padding='same', name='Conv3d_4c_2b_3x3')
+    branch_2 = conv3d_bn(x, 24, 1, 1, 1, padding='same',
+                         name='Conv3d_4c_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 64, 3, 3, 3,
+                         padding='same', name='Conv3d_4c_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_4c_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1, padding='same', name='Conv3d_4c_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_4c_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1,
+                         padding='same', name='Conv3d_4c_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
@@ -436,16 +486,23 @@ def Inception_Inflated3d(include_top=True,
         name='Mixed_4c')
 
     # Mixed 4d
-    branch_0 = conv3d_bn(x, 128, 1, 1, 1, padding='same', name='Conv3d_4d_0a_1x1')
+    branch_0 = conv3d_bn(x, 128, 1, 1, 1, padding='same',
+                         name='Conv3d_4d_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 128, 1, 1, 1, padding='same', name='Conv3d_4d_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 256, 3, 3, 3, padding='same', name='Conv3d_4d_1b_3x3')
+    branch_1 = conv3d_bn(x, 128, 1, 1, 1, padding='same',
+                         name='Conv3d_4d_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 256, 3, 3, 3,
+                         padding='same', name='Conv3d_4d_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 24, 1, 1, 1, padding='same', name='Conv3d_4d_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 64, 3, 3, 3, padding='same', name='Conv3d_4d_2b_3x3')
+    branch_2 = conv3d_bn(x, 24, 1, 1, 1, padding='same',
+                         name='Conv3d_4d_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 64, 3, 3, 3,
+                         padding='same', name='Conv3d_4d_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_4d_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1, padding='same', name='Conv3d_4d_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_4d_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1,
+                         padding='same', name='Conv3d_4d_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
@@ -453,16 +510,23 @@ def Inception_Inflated3d(include_top=True,
         name='Mixed_4d')
 
     # Mixed 4e
-    branch_0 = conv3d_bn(x, 112, 1, 1, 1, padding='same', name='Conv3d_4e_0a_1x1')
+    branch_0 = conv3d_bn(x, 112, 1, 1, 1, padding='same',
+                         name='Conv3d_4e_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 144, 1, 1, 1, padding='same', name='Conv3d_4e_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 288, 3, 3, 3, padding='same', name='Conv3d_4e_1b_3x3')
+    branch_1 = conv3d_bn(x, 144, 1, 1, 1, padding='same',
+                         name='Conv3d_4e_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 288, 3, 3, 3,
+                         padding='same', name='Conv3d_4e_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 32, 1, 1, 1, padding='same', name='Conv3d_4e_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 64, 3, 3, 3, padding='same', name='Conv3d_4e_2b_3x3')
+    branch_2 = conv3d_bn(x, 32, 1, 1, 1, padding='same',
+                         name='Conv3d_4e_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 64, 3, 3, 3,
+                         padding='same', name='Conv3d_4e_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_4e_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1, padding='same', name='Conv3d_4e_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_4e_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 64, 1, 1, 1,
+                         padding='same', name='Conv3d_4e_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
@@ -470,37 +534,51 @@ def Inception_Inflated3d(include_top=True,
         name='Mixed_4e')
 
     # Mixed 4f
-    branch_0 = conv3d_bn(x, 256, 1, 1, 1, padding='same', name='Conv3d_4f_0a_1x1')
+    branch_0 = conv3d_bn(x, 256, 1, 1, 1, padding='same',
+                         name='Conv3d_4f_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 160, 1, 1, 1, padding='same', name='Conv3d_4f_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 320, 3, 3, 3, padding='same', name='Conv3d_4f_1b_3x3')
+    branch_1 = conv3d_bn(x, 160, 1, 1, 1, padding='same',
+                         name='Conv3d_4f_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 320, 3, 3, 3,
+                         padding='same', name='Conv3d_4f_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 32, 1, 1, 1, padding='same', name='Conv3d_4f_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 128, 3, 3, 3, padding='same', name='Conv3d_4f_2b_3x3')
+    branch_2 = conv3d_bn(x, 32, 1, 1, 1, padding='same',
+                         name='Conv3d_4f_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 128, 3, 3, 3,
+                         padding='same', name='Conv3d_4f_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_4f_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 128, 1, 1, 1, padding='same', name='Conv3d_4f_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_4f_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 128, 1, 1, 1,
+                         padding='same', name='Conv3d_4f_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
         axis=channel_axis,
         name='Mixed_4f')
 
-
     # Downsampling (spatial and temporal)
-    x = MaxPooling3D((2, 2, 2), strides=(2, 2, 2), padding='same', name='MaxPool2d_5a_2x2')(x)
+    x = MaxPooling3D((2, 2, 2), strides=(2, 2, 2),
+                     padding='same', name='MaxPool2d_5a_2x2')(x)
 
     # Mixed 5b
-    branch_0 = conv3d_bn(x, 256, 1, 1, 1, padding='same', name='Conv3d_5b_0a_1x1')
+    branch_0 = conv3d_bn(x, 256, 1, 1, 1, padding='same',
+                         name='Conv3d_5b_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 160, 1, 1, 1, padding='same', name='Conv3d_5b_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 320, 3, 3, 3, padding='same', name='Conv3d_5b_1b_3x3')
+    branch_1 = conv3d_bn(x, 160, 1, 1, 1, padding='same',
+                         name='Conv3d_5b_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 320, 3, 3, 3,
+                         padding='same', name='Conv3d_5b_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 32, 1, 1, 1, padding='same', name='Conv3d_5b_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 128, 3, 3, 3, padding='same', name='Conv3d_5b_2b_3x3')
+    branch_2 = conv3d_bn(x, 32, 1, 1, 1, padding='same',
+                         name='Conv3d_5b_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 128, 3, 3, 3,
+                         padding='same', name='Conv3d_5b_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_5b_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 128, 1, 1, 1, padding='same', name='Conv3d_5b_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_5b_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 128, 1, 1, 1,
+                         padding='same', name='Conv3d_5b_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
@@ -508,16 +586,23 @@ def Inception_Inflated3d(include_top=True,
         name='Mixed_5b')
 
     # Mixed 5c
-    branch_0 = conv3d_bn(x, 384, 1, 1, 1, padding='same', name='Conv3d_5c_0a_1x1')
+    branch_0 = conv3d_bn(x, 384, 1, 1, 1, padding='same',
+                         name='Conv3d_5c_0a_1x1')
 
-    branch_1 = conv3d_bn(x, 192, 1, 1, 1, padding='same', name='Conv3d_5c_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 384, 3, 3, 3, padding='same', name='Conv3d_5c_1b_3x3')
+    branch_1 = conv3d_bn(x, 192, 1, 1, 1, padding='same',
+                         name='Conv3d_5c_1a_1x1')
+    branch_1 = conv3d_bn(branch_1, 384, 3, 3, 3,
+                         padding='same', name='Conv3d_5c_1b_3x3')
 
-    branch_2 = conv3d_bn(x, 48, 1, 1, 1, padding='same', name='Conv3d_5c_2a_1x1')
-    branch_2 = conv3d_bn(branch_2, 128, 3, 3, 3, padding='same', name='Conv3d_5c_2b_3x3')
+    branch_2 = conv3d_bn(x, 48, 1, 1, 1, padding='same',
+                         name='Conv3d_5c_2a_1x1')
+    branch_2 = conv3d_bn(branch_2, 128, 3, 3, 3,
+                         padding='same', name='Conv3d_5c_2b_3x3')
 
-    branch_3 = MaxPooling3D((3, 3, 3), strides=(1, 1, 1), padding='same', name='MaxPool2d_5c_3a_3x3')(x)
-    branch_3 = conv3d_bn(branch_3, 128, 1, 1, 1, padding='same', name='Conv3d_5c_3b_1x1')
+    branch_3 = MaxPooling3D((3, 3, 3), strides=(
+        1, 1, 1), padding='same', name='MaxPool2d_5c_3a_3x3')(x)
+    branch_3 = conv3d_bn(branch_3, 128, 1, 1, 1,
+                         padding='same', name='Conv3d_5c_3b_1x1')
 
     x = layers.concatenate(
         [branch_0, branch_1, branch_2, branch_3],
@@ -526,12 +611,13 @@ def Inception_Inflated3d(include_top=True,
 
     if include_top:
         # Classification block
-        x = AveragePooling3D((2, 7, 7), strides=(1, 1, 1), padding='valid', name='global_avg_pool')(x)
+        x = AveragePooling3D((2, 7, 7), strides=(1, 1, 1),
+                             padding='valid', name='global_avg_pool')(x)
         x = Dropout(dropout_prob)(x)
 
-        x = conv3d_bn(x, classes, 1, 1, 1, padding='same', 
-                use_bias=True, use_activation_fn=False, use_bn=False, name='Conv3d_6a_1x1')
- 
+        x = conv3d_bn(x, classes, 1, 1, 1, padding='same',
+                      use_bias=True, use_activation_fn=False, use_bn=False, name='Conv3d_6a_1x1')
+
         num_frames_remaining = int(x.shape[1])
         x = Reshape((num_frames_remaining, classes))(x)
 
@@ -544,9 +630,8 @@ def Inception_Inflated3d(include_top=True,
     else:
         h = int(x.shape[2])
         w = int(x.shape[3])
-        x = AveragePooling3D((2, h, w), strides=(1, 1, 1), padding='valid', name='global_avg_pool')(x)
-
-
+        x = AveragePooling3D((2, h, w), strides=(1, 1, 1),
+                             padding='valid', name='global_avg_pool')(x)
 
     inputs = img_input
     # create model
@@ -562,7 +647,7 @@ def Inception_Inflated3d(include_top=True,
                 weights_url = WEIGHTS_PATH_NO_TOP['rgb_kinetics_only']
                 model_name = 'i3d_inception_rgb_kinetics_only_no_top.h5'
 
-        elif weights == WEIGHTS_NAME[1]: # flow_kinetics_only
+        elif weights == WEIGHTS_NAME[1]:  # flow_kinetics_only
             if include_top:
                 weights_url = WEIGHTS_PATH['flow_kinetics_only']
                 model_name = 'i3d_inception_flow_kinetics_only.h5'
@@ -570,7 +655,7 @@ def Inception_Inflated3d(include_top=True,
                 weights_url = WEIGHTS_PATH_NO_TOP['flow_kinetics_only']
                 model_name = 'i3d_inception_flow_kinetics_only_no_top.h5'
 
-        elif weights == WEIGHTS_NAME[2]: # rgb_imagenet_and_kinetics
+        elif weights == WEIGHTS_NAME[2]:  # rgb_imagenet_and_kinetics
             if include_top:
                 weights_url = WEIGHTS_PATH['rgb_imagenet_and_kinetics']
                 model_name = 'i3d_inception_rgb_imagenet_and_kinetics.h5'
@@ -578,7 +663,7 @@ def Inception_Inflated3d(include_top=True,
                 weights_url = WEIGHTS_PATH_NO_TOP['rgb_imagenet_and_kinetics']
                 model_name = 'i3d_inception_rgb_imagenet_and_kinetics_no_top.h5'
 
-        elif weights == WEIGHTS_NAME[3]: # flow_imagenet_and_kinetics
+        elif weights == WEIGHTS_NAME[3]:  # flow_imagenet_and_kinetics
             if include_top:
                 weights_url = WEIGHTS_PATH['flow_imagenet_and_kinetics']
                 model_name = 'i3d_inception_flow_imagenet_and_kinetics.h5'
@@ -586,7 +671,8 @@ def Inception_Inflated3d(include_top=True,
                 weights_url = WEIGHTS_PATH_NO_TOP['flow_imagenet_and_kinetics']
                 model_name = 'i3d_inception_flow_imagenet_and_kinetics_no_top.h5'
 
-        downloaded_weights_path = get_file(model_name, weights_url, cache_subdir='models')
+        downloaded_weights_path = get_file(
+            model_name, weights_url, cache_subdir='models')
         model.load_weights(downloaded_weights_path)
 
         if K.backend() == 'theano':
@@ -607,15 +693,17 @@ def Inception_Inflated3d(include_top=True,
 
     return model
 
-'''
-layers to be frozen can be set as a hyperparameter
-'''
+
 def freeze_layers(model, leave_nb_layers=50):
+    '''
+    layers to be frozen can be set as a hyperparameter
+    '''
     for layer in model.layers[:-leave_nb_layers]:
         layer.trainable = False
     for layer in model.layers[-leave_nb_layers:]:
         layer.trainable = True
     return model
+
 
 def TopLayer(input_shape, classes, dropout_prob):
     inputs = Input(shape=input_shape, name='top_layer_input')
@@ -624,55 +712,58 @@ def TopLayer(input_shape, classes, dropout_prob):
                   use_bias=True, use_activation_fn=False, use_bn=False, name='Conv3d_6a_1x1')
     num_frames_remaining = int(x.shape[1])
     x = Reshape((num_frames_remaining, classes))(x)
-    x = Lambda(lambda x: K.mean(x, axis=1, keepdims=False), output_shape=lambda s: (s[0], s[2]))(x)
+    x = Lambda(lambda x: K.mean(x, axis=1, keepdims=False),
+               output_shape=lambda s: (s[0], s[2]))(x)
     x = Activation('softmax', name='prediction')(x)
     final_model = Model(inputs=inputs, outputs=x, name='i3d_top')
     return final_model
 
+
 def add_top_layer(base_model, classes, dropout_prob):
-    top_layer = TopLayer(base_model.output_shape[1:], 
-                         # remove the first dimension from the output shape because it is dependent on the batch size 
+    top_layer = TopLayer(base_model.output_shape[1:],
+                         # remove the first dimension from the output shape because it is dependent on the batch size
                          classes, dropout_prob)
     x = base_model.output
     predictions = top_layer(x)
-    new_model = Model(inputs=base_model.input, outputs=predictions, name='i3d_with_top')
+    new_model = Model(inputs=base_model.input,
+                      outputs=predictions, name='i3d_with_top')
     return new_model
+
 
 def get_top_n_predictions(prediction_probs, n, classes):
     ind = np.argpartition(prediction_probs, -n)[-n:]
     sorted_ind = ind[np.argsort(prediction_probs[ind])][::-1]
     return classes[sorted_ind]
 
+
 def model_chkpts():
-    tensorBoard_cb = keras.callbacks.TensorBoard(log_dir='logs', update_freq='batch', write_graph=True, write_images=True)
-    
-    checkpoint = time.strftime('%Y%m%d-%H%M', time.gmtime()) + '-%s%03d'.format()
-    
-    topLast_model_chkpt_path = os.path.join(MODEL_DIR, checkpoint + '-top-last.h5')
-    topLast_chkpt_cb = keras.callbacks.ModelCheckpoint(filepath=topLast_model_chkpt_path, 
-                                                    verbose=1, save_best_only=False,
-                                                    save_weights_only=False
-                                                   )
-    
-    topBest_model_chkpt_path = os.path.join(MODEL_DIR, checkpoint + '-top-best.h5')
-    topBest_chkpt_cb = keras.callbacks.ModelCheckpoint(filepath=topBest_model_chkpt_path, 
-                                                    verbose=1, save_best_only=False,
-                                                    save_weights_only=False
-                                                   )
-    
+    tensorBoard_cb = keras.callbacks.TensorBoard(
+        log_dir='logs', update_freq='batch', write_graph=True, write_images=True)
+
+    checkpoint = time.strftime(
+        '%Y%m%d-%H%M', time.gmtime()) + '-%s%03d'.format()
+
+    topLast_model_chkpt_path = os.path.join(
+        MODEL_DIR, checkpoint + '-top-last.h5')
+    topLast_chkpt_cb = keras.callbacks.ModelCheckpoint(filepath=topLast_model_chkpt_path,
+                                                       verbose=1, save_best_only=False,
+                                                       save_weights_only=False
+                                                       )
+
+    topBest_model_chkpt_path = os.path.join(
+        MODEL_DIR, checkpoint + '-top-best.h5')
+    topBest_chkpt_cb = keras.callbacks.ModelCheckpoint(filepath=topBest_model_chkpt_path,
+                                                       verbose=1, save_best_only=False,
+                                                       save_weights_only=False
+                                                       )
+
     return [tensorBoard_cb, topLast_chkpt_cb, topBest_chkpt_cb]
-
-with open(DS_CLASSES_PATH, 'r') as f:
-    CLASSES = json.load(f)
-
-with open(TRAIN_DATA_PATH, 'r') as f:
-    TRAINING_DATA = json.load(f)
 
 my_model = Inception_Inflated3d(include_top=False,
                                 weights='rgb_imagenet_and_kinetics',
                                 input_shape=(74, 224, 224, 3),
                                 classes=100
-                               )
+                                )
 
 # print('len(my_model.layers):', len(my_model.layers))
 # print('my_model.summary():', my_model.summary())
@@ -680,25 +771,13 @@ my_model = Inception_Inflated3d(include_top=False,
 EPOCHS = 30
 
 my_model_frozen = freeze_layers(my_model)
-my_model_frozen_w_top_layer = add_top_layer(base_model=my_model_frozen, classes=100, dropout_prob=0.5)
+my_model_frozen_w_top_layer = add_top_layer(
+    base_model=my_model_frozen, classes=5, dropout_prob=0.5)
 my_model_frozen_w_top_layer.summary()
 
 optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001, weight_decay=1e-6)
 my_model_frozen_w_top_layer.compile(optimizer=optimizer,
-                 loss='categorical_crossentropy',
-                 metrics=['accuracy']
-                )
+                                    loss='categorical_crossentropy',
+                                    metrics=['accuracy']
+                                    )
 model_checkpoints = model_chkpts()
-
-FIRST_5_CLASSES = CLASSES[:5]
-indices_of_first_5_classes = []
-for i, instance in enumerate(TRAINING_DATA):
-    if instance['label'] < 5:
-        indices_of_first_5_classes.append(i)
-    
-print("len(indices_of_first_5_classes):", len(indices_of_first_5_classes))
-indices_of_first_5_classes = np.array(indices_of_first_5_classes)
-# np.save(INDICES_INSTANCES_OF_SPECIFIC_CLASSES_FILE_PATH, indices_of_first_5_classes)
-# dwnld_trim_crop_pipeline_indices(TRAINING_DATA, indices=indices_of_first_5_classes)
-beforehand_processed_indices = preprocess_vids_of_indices_instances(TRAINING_DATA, indices=indices_of_first_5_classes)
-print(beforehand_processed_indices)
