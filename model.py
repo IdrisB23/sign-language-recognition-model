@@ -1,26 +1,16 @@
+import constants
+
 import os
 import time
 import warnings
-import json
-import collections
-import pathlib
-
-from download_cropped_vids import dwnld_trim_crop_pipeline_indices
-from download_cropped_vids import dwnld_trim_crop_pipeline_range
-from preprocess_clips import preprocess_vids_of_indices_instances
-
-from frame_generator import FrameGenerator
-from optical_flow_generator import OpticalFlowStream
 
 import numpy as np
-import tensorflow as tf
 
-import keras
+from tensorflow import keras
 
 from keras.models import Model
 from keras import layers
 from keras.layers import Activation
-from keras.layers import Dense
 from keras.layers import Input
 from keras.layers import BatchNormalization
 from keras.layers import Conv3D
@@ -29,49 +19,10 @@ from keras.layers import AveragePooling3D
 from keras.layers import Dropout
 from keras.layers import Reshape
 from keras.layers import Lambda
-from keras.layers import GlobalAveragePooling3D
 
-from keras.utils import layer_utils, get_source_inputs
+from keras.utils import layer_utils
 from keras.utils.data_utils import get_file
 from keras import backend as K
-
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import LabelBinarizer
-
-
-MODEL_DIR = 'model'
-
-DATA_DIR = 'data'
-
-DATASET_DIR = os.path.join(DATA_DIR, 'dataset')
-DS_CLASSES_PATH = os.path.join(DATASET_DIR, 'MSASL_classes.json')
-DS_SYNONYMS_DATA_PATH = os.path.join(DATASET_DIR, 'MSASL_synonyms.json')
-TEST_DATA_PATH = os.path.join(DATASET_DIR, 'MSASL_test.json')
-TRAIN_DATA_PATH = os.path.join(DATASET_DIR, 'MSASL_train.json')
-NEW_TRAIN_DATA_PATH = 'cleansed_train_ds.json'
-VAL_DATA_PATH = os.path.join(DATASET_DIR, 'MSASL_val.json')
-
-ASSETS_DIR = os.path.join(DATA_DIR, 'assets')
-
-INDICES_INSTANCES_OF_SPECIFIC_CLASSES_FILE_PATH = os.path.join(
-    ASSETS_DIR, 'indices_instances_specific_classes.npy')
-
-VIDEOS_DIR = os.path.join(DATA_DIR, 'videos')
-
-OUTPUT_DIR = os.path.join(DATA_DIR, 'output')
-OUTPUT_FRAMES_DIR = os.path.join(OUTPUT_DIR, 'frames')
-NPY_FILES_DIR = os.path.join(OUTPUT_DIR, 'npy_files')
-
-MODEL_ARCH_IMG_PATH = os.path.join(ASSETS_DIR, 'i3d_architecture.png')
-INCEPTION_MODULE_ARCH_IMG_PATH = os.path.join(
-    ASSETS_DIR, 'inception_module_architecture.png')
-
-CROPPED_VIDS_DIR = os.path.join(VIDEOS_DIR, 'cropped')
-FRAME_RATE = 25
-NUM_FRAMES_TO_EXTRACT = 74
-SMALLEST_DIM = 256
-IMAGE_CROP_SIZE = 224
 
 WEIGHTS_NAME = ['rgb_kinetics_only', 'flow_kinetics_only',
                 'rgb_imagenet_and_kinetics', 'flow_imagenet_and_kinetics']
@@ -348,7 +299,7 @@ def Inception_Inflated3d(include_top=True,
     # Determine proper input shape
     input_shape = _obtain_input_shape(
         input_shape,
-        default_frame_size=224,
+        default_frame_size=constants.MODEL_INPUT_IMG_SIZE[0],
         min_frame_size=32,
         default_num_frames=64,
         min_num_frames=8,
@@ -467,7 +418,7 @@ def Inception_Inflated3d(include_top=True,
 
     branch_1 = conv3d_bn(x, 112, 1, 1, 1, padding='same',
                          name='Conv3d_4c_1a_1x1')
-    branch_1 = conv3d_bn(branch_1, 224, 3, 3, 3,
+    branch_1 = conv3d_bn(branch_1, constants.MODEL_INPUT_IMG_SIZE[0], 3, 3, 3,
                          padding='same', name='Conv3d_4c_1b_3x3')
 
     branch_2 = conv3d_bn(x, 24, 1, 1, 1, padding='same',
@@ -736,48 +687,25 @@ def get_top_n_predictions(prediction_probs, n, classes):
     return classes[sorted_ind]
 
 
-def model_chkpts():
+def model_chkpts(log_dir, model_dir):
     tensorBoard_cb = keras.callbacks.TensorBoard(
-        log_dir='logs', update_freq='batch', write_graph=True, write_images=True)
+        log_dir=log_dir, update_freq='batch', write_graph=True, write_images=True)
 
     checkpoint = time.strftime(
         '%Y%m%d-%H%M', time.gmtime()) + '-%s%03d'.format()
 
     topLast_model_chkpt_path = os.path.join(
-        MODEL_DIR, checkpoint + '-top-last.h5')
+        model_dir, checkpoint + '-top-last.h5')
     topLast_chkpt_cb = keras.callbacks.ModelCheckpoint(filepath=topLast_model_chkpt_path,
                                                        verbose=1, save_best_only=False,
                                                        save_weights_only=False
                                                        )
 
     topBest_model_chkpt_path = os.path.join(
-        MODEL_DIR, checkpoint + '-top-best.h5')
+        model_dir, checkpoint + '-top-best.h5')
     topBest_chkpt_cb = keras.callbacks.ModelCheckpoint(filepath=topBest_model_chkpt_path,
                                                        verbose=1, save_best_only=False,
                                                        save_weights_only=False
                                                        )
 
     return [tensorBoard_cb, topLast_chkpt_cb, topBest_chkpt_cb]
-
-my_model = Inception_Inflated3d(include_top=False,
-                                weights='rgb_imagenet_and_kinetics',
-                                input_shape=(74, 224, 224, 3),
-                                classes=100
-                                )
-
-# print('len(my_model.layers):', len(my_model.layers))
-# print('my_model.summary():', my_model.summary())
-
-EPOCHS = 30
-
-my_model_frozen = freeze_layers(my_model)
-my_model_frozen_w_top_layer = add_top_layer(
-    base_model=my_model_frozen, classes=5, dropout_prob=0.5)
-my_model_frozen_w_top_layer.summary()
-
-optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001, weight_decay=1e-6)
-my_model_frozen_w_top_layer.compile(optimizer=optimizer,
-                                    loss='categorical_crossentropy',
-                                    metrics=['accuracy']
-                                    )
-model_checkpoints = model_chkpts()
