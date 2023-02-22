@@ -5,6 +5,8 @@ import cv2
 import tensorflow as tf
 import numpy as np
 
+import constants
+
 
 def format_frames(frame, output_size):
     frame = tf.image.convert_image_dtype(frame, tf.float32)
@@ -12,7 +14,7 @@ def format_frames(frame, output_size):
     return frame
 
 
-def frames_from_video_file(video_path, n_frames, output_size=(224, 224), frame_step=15):
+def frames_from_video_file(video_path: pathlib.Path, n_frames: int = 74, output_size=constants.MODEL_INPUT_IMG_SIZE, frame_step=15):
     '''
     '''
     result = []
@@ -71,7 +73,9 @@ class FrameGenerator:
         classes = []
         for idx in self.instance_idx:
             video_file_paths.extend(self.videos_dir.glob(f'*/{idx}.mp4'))
-            classes.append(self.idx_2_label[idx]['clean_text'])
+            augmented_vid_file_paths = list(self.videos_dir.glob(f'*/{idx}*.avi')) # augmented videos as well
+            video_file_paths.extend(augmented_vid_file_paths)
+            classes.extend((len(augmented_vid_file_paths) + 1) * [self.idx_2_label[idx]['clean_text']]) # add as many classes as the original and augmented videos
         return video_file_paths, classes
 
     def __call__(self):
@@ -83,7 +87,7 @@ class FrameGenerator:
 
         for path, name in pairs:
             video_frames = frames_from_video_file(path, self.n_frames)
-            label = self.class_ids[name] # encode labels
+            label = self.class_ids[name]  # encode labels
             yield video_frames, label
 
 
