@@ -24,7 +24,33 @@ def sample_frames(vid_path: pathlib.Path):
 def sometimes(aug): return va.Sometimes(0.5, aug)
 
 def augment_video(input_path: pathlib.Path, output_path: pathlib.Path):
+
     sampled_frames = sample_frames(input_path)
+
+    # Begin: 0-pad all frames in videos if their frames are smaller than the cropping size
+
+    frame_height = sampled_frames.shape[1]
+    frame_width = sampled_frames.shape[2]
+    nb_pads_vertically = 0
+    nb_pads_above = 0
+    nb_pads_below = 0
+    if frame_height < MODEL_INPUT_IMG_SIZE[0]:
+        nb_pads_vertically = MODEL_INPUT_IMG_SIZE[0] - frame_height
+        nb_pads_above = nb_pads_vertically // 2
+        nb_pads_below = nb_pads_vertically - nb_pads_above
+    
+    nb_pads_horizontally = 0
+    nb_pads_left = 0
+    nb_pads_right = 0
+    if frame_width < MODEL_INPUT_IMG_SIZE[1]:
+        nb_pads_horizontally = MODEL_INPUT_IMG_SIZE[1] - frame_width
+        nb_pads_left = nb_pads_horizontally // 2
+        nb_pads_right = nb_pads_horizontally - nb_pads_left
+
+    sampled_frames = np.pad(sampled_frames, ((0,0), (nb_pads_above, nb_pads_below), (nb_pads_left, nb_pads_right), (0, 0)), 'constant', constant_values=0)
+
+    # End: 0-pad all frames in videos if their frames are smaller than the cropping size
+
     seq = va.Sequential([
         va.RandomCrop(size=MODEL_INPUT_IMG_SIZE),
         va.RandomRotate(degrees=10),
