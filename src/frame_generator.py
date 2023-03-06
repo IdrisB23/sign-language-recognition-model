@@ -1,6 +1,5 @@
 import pathlib
 import random
-import json
 import cv2
 import tensorflow as tf
 import numpy as np
@@ -66,7 +65,7 @@ class FrameGenerator:
         self.instance_idx = instance_idx
         self.n_frames = n_frames
         self.class_ids = dict((name, idx)
-                              for idx, name in enumerate(DS_CLASSES))
+                              for idx, name in enumerate(constants.CLASSES))
 
     def get_videos_files_and_class_names(self):
         video_file_paths = []
@@ -89,33 +88,3 @@ class FrameGenerator:
             video_frames = frames_from_video_file(path, self.n_frames)
             label = self.class_ids[name]  # encode labels
             yield video_frames, label
-
-
-NUM_FRAMES = 74
-
-data_dir_path = pathlib.Path('data')
-output_dir_path = data_dir_path / 'output'
-frames_dir_path = output_dir_path / 'frames'
-videos_dir_path = data_dir_path / 'videos' / 'train'
-cropped_videos_dir_path = videos_dir_path / 'cropped'
-dataset_dir_path = data_dir_path / 'dataset'
-DS_CLASSES_PATH = dataset_dir_path / 'MSASL_classes.json'
-cleansed_training_data_path = pathlib.Path('cleansed_train_ds.json')
-
-with open(DS_CLASSES_PATH, 'r') as f_:
-    DS_CLASSES = json.load(f_)
-    f_.close()
-
-with open(cleansed_training_data_path, 'r') as f_:
-    training_data = json.load(f_)
-    f_.close()
-
-
-# instance_idx = [45, 46, 59, 121, 122, 178, 179, 180, 181, 184, 199, 200, 275, 276, 277, 278, 279, 292, 316, 328, 329, 330, 334, 340, 367,
-#                 396, 421, 470, 477, 596, 633, 634, 635, 636, 637, 644, 686, 700, 775, 885, 995, 1084, 1149, 1241, 1310, 1421, 1424, 1661, 1967, 2037]
-# fg = FrameGenerator(cropped_videos_dir_path,
-#                     training_data, True, instance_idx)
-# i = 0
-# for video_frames, label in fg():
-#     print(i, video_frames.shape, label)
-#     i += 1
