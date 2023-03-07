@@ -47,29 +47,38 @@ def clean_up_files_in_dir(DIR_: pathlib.Path):
             path_.unlink()
 
 
-def trim_in_file_and_save_to_out_file(in_file: pathlib.Path, out_file: pathlib.Path, start: int, end: int):
+def trim_video(in_vid: pathlib.Path, out_vid: pathlib.Path, start: int, end: int):
     # to avoid overriding confirmation prompt of the ffmpeg-cli
-    if out_file.is_file():
-        out_file.unlink()
+    if out_vid.is_file():
+        out_vid.unlink()
 
     # probe function delivers useful information about the signal file
-    probe_result = ffmpeg.probe(in_file)
+    probe_result = ffmpeg.probe(in_vid)
     in_file_duration = probe_result.get('format', {}).get('duration', {})
     print(in_file_duration)
 
-    input_stream = ffmpeg.input(in_file)
+    '''first implementation: causes errors when audio channel doesn't exist in downloaded videos'''
+    # input_stream = ffmpeg.input(in_file)
+    # # video and audio channels need to be handled (filtered/trimmed) separately
+    # pts = 'PTS-STARTPTS'
+    # video = input_stream.trim(start=start, end=end).setpts(pts)
+    # audio = (input_stream
+    #          .filter('atrim', start=start, end=end)
+    #          .filter('asetpts', pts))
+    # # then we concatenate both channels
+    # video_and_audio = ffmpeg.concat(video, audio, v=1, a=1)
 
-    # video and audio channels need to be handled (filtered/trimmed) separately
-    pts = 'PTS-STARTPTS'
-    video = input_stream.trim(start=start, end=end).setpts(pts)
-    audio = (input_stream
-             .filter('atrim', start=start, end=end)
-             .filter('asetpts', pts))
-    # then we concatenate both channels
-    video_and_audio = ffmpeg.concat(video, audio, v=1, a=1)
-
-    output = ffmpeg.output(video_and_audio, out_file, format='mp4')
-    output.run()
+    # output = ffmpeg.output(video, str(out_vid.resolve()), format='mp4')
+    # output.run()
+    '''second implementation: only extract and trim video as that is the only relevant part anyways'''
+    command_tb_run = f'ffmpeg -i {in_vid} -vf trim={start}:{end} {out_vid}'
+    try:
+        subp_output = subprocess.run(command_tb_run, shell=True)
+    except Exception as exc:
+        print(
+            f'[An exception of type {type(exc).__name__} occurred. Arguments:\n{exc.args!r}]')
+        print(f'STDERR of subprocess: \n {subp_output.stderr}')
+    pass
 
 
 def remove_normalization_coordinates(x_norm: float, y_norm: float, width: float, height: float):
@@ -87,13 +96,23 @@ def crop_video(in_vid: pathlib.Path, out_vid: pathlib.Path, x: float, y: float, 
     width determines how far to travel horizontally from the vertical line defined by the x parameter
     height determines how far to travel vertically from the horizontal line defined by the y parameter
     '''
-    if not out_vid.exists():
-        input_stream = ffmpeg.input(in_vid)
-        pts = 'PTS-STARTPTS'
-        cropped = ffmpeg.crop(input_stream, x, y, width, height).setpts(pts)
-
-        output = ffmpeg.output(cropped, out_vid, format='mp4')
-        output.run()
+    if out_vid.is_file():
+        out_vid.unlink()
+    '''first implementation'''
+    # input_stream = ffmpeg.input(in_vid)
+    # pts = 'PTS-STARTPTS'
+    # cropped = ffmpeg.crop(input_stream, x, y, width, height).setpts(pts)
+    # output = ffmpeg.output(cropped, out_vid, format='mp4')
+    # output.run()
+    '''second implementation: only extract and trim video as that is the only relevant part anyways'''
+    command_tb_run = f'ffmpeg -i {in_vid} -vf crop=w={width}:h={height}:x={x}:y={y} {out_vid}'
+    try:
+        subp_output = subprocess.run(command_tb_run, shell=True)
+    except Exception as exc:
+        print(
+            f'[An exception of type {type(exc).__name__} occurred. Arguments:\n{exc.args!r}]')
+        print(f'STDERR of subprocess:\n{subp_output.stderr}')
+    pass
 
 
 def update_instances_dwnld_state_w_same_vid_url(j: int, instance, IDX_2_INIT_DWNLD_IDX_W_SAME_URL):
@@ -112,10 +131,10 @@ def pafy_download_vid_wo_audio(url: str, downloaded_vid_path: pathlib.Path, i, i
     print('stream file size:', s_filesize)
     if s_filesize < VID_SIZE_THRESHOLD:  # because of pafy"s slow download rate, only download videos of size less than a certain threshold, remove this later on
         s.download(filepath=downloaded_vid_path, quiet=True,
-                       callback=mycb)  # starts download
+                   callback=mycb)  # starts download
         print(downloaded_vid_path)
         update_instances_dwnld_state_w_same_vid_url(
-                i, instance, IDX_2_INIT_DWNLD_IDX_W_SAME_URL)
+            i, instance, IDX_2_INIT_DWNLD_IDX_W_SAME_URL)
     else:
         print(i, '[Video stream excedes size threshold, skipping...]')
         return i
@@ -123,8 +142,8 @@ def pafy_download_vid_wo_audio(url: str, downloaded_vid_path: pathlib.Path, i, i
 
 
 def yt_dlp_download_vid_wo_audio(url: str, output_file: pathlib.Path):
-    command = f'yt-dlp --format "bv[ext=mp4]" -o {output_file} {url}'
-    subp_output = subprocess.run(command, shell=True)
+    command_tb_run = f'yt-dlp --format "bv[ext=mp4]" -o {output_file} {url}'
+    subp_output = subprocess.run(command_tb_run, shell=True)
     return subp_output.returncode
 
 
@@ -144,14 +163,14 @@ def download_unique_vid_of_instance_and_update_map(i: int, instance, IDX_2_INIT_
                     update_instances_dwnld_state_w_same_vid_url(
                         i, instance, IDX_2_INIT_DWNLD_IDX_W_SAME_URL)
             elif DWNLD_BACKEND == 'pafy':
-                pafy_download_vid_wo_audio(vid_url, downloaded_vid_path, i, instance, IDX_2_INIT_DWNLD_IDX_W_SAME_URL)
+                pafy_download_vid_wo_audio(
+                    vid_url, downloaded_vid_path, i, instance, IDX_2_INIT_DWNLD_IDX_W_SAME_URL)
             else:
-                print(f'Something is wrong! DWNLD_BACKEND == {DWNLD_BACKEND} which is neither yt-dlp nor pafy as configured and expected')
-        except Exception as ex:
-            template = str(
-                i) + ' [An exception of type {0} occurred. Arguments:\n{1!r}]'
-            message = template.format(type(ex).__name__, ex.args)
-            print(message)
+                print(
+                    f'Something is wrong! DWNLD_BACKEND == {DWNLD_BACKEND} which is neither yt-dlp nor pafy as configured and expected')
+        except Exception as exc:
+            print(str(
+                i) + f' [An exception of type {type(exc).__name__} occurred. Arguments:\n{exc.args!r}]')
         finally:
             print('-------------------------------------------------')
     else:
@@ -202,9 +221,7 @@ def download_unique_vids_of_instances_in_range_and_return_vids_over_threshold(st
 
 
 def trim_instance_vid_and_update_map(i: int, instance, INSTANCE_2_TRIMMED, data_package):
-
-    vid_url = remove_http_or_https_from_url(instance['url'])
-
+    vid_url = instance['url']
     IDX_2_INIT_DWNLD_IDX_W_SAME_URL = data_package['IDX_2_INIT_DWNLD_IDX_W_SAME_URL']
     DOWNLOADED_DIR = data_package['DOWNLOADED_DIR']
 
@@ -213,7 +230,7 @@ def trim_instance_vid_and_update_map(i: int, instance, INSTANCE_2_TRIMMED, data_
     if idx_dwnld_status == str(-1):
         print(
             i, ': [This instance\'s video is private or inaccessible, skipping...]')
-        return
+        return INSTANCE_2_TRIMMED
     # means instance itself initiated downloaded
     if idx_dwnld_status == str(-2):
         dwnld_init_idx = str(i)
@@ -230,10 +247,8 @@ def trim_instance_vid_and_update_map(i: int, instance, INSTANCE_2_TRIMMED, data_
         clip_start = instance['start_time']
         clip_end = instance['end_time']
         trimmed_vid_path = class_path / f'{i}.mp4'
-        trim_in_file_and_save_to_out_file(
-            vid_path, trimmed_vid_path, clip_start, clip_end)
+        trim_video(vid_path, trimmed_vid_path, clip_start, clip_end)
         INSTANCE_2_TRIMMED[str(i)] = trimmed_vid_path.resolve().__str__()
-
     # if it exists in instance2trimmed, then it's already been trimmed before therefore skip it
     else:
         print(i, ': [Already trimmed, skipping...]')
@@ -303,7 +318,7 @@ def crop_vid_for_instance_and_update_map(i: int, instance, INSTANCE_2_CROPPED, d
             str(instance['clean_text'].replace(' ', '_'))
         if not class_path.exists():
             class_path.mkdir(parents=True)
-        out_vid_path: pathlib.Path = class_path / str(i) + '.mp4'
+        out_vid_path: pathlib.Path = class_path / (str(i) + '.mp4')
         print(i, ', cropping from source =>', in_vid_path)
         crop_video(in_vid_path, out_vid_path,
                    x_topleft, y_topleft, width, height)
