@@ -20,13 +20,13 @@ output_signature2 = (
 
 train_ds_1 = tf.data.Dataset.from_generator(
     FrameGenerator(constants.TRAIN_VIDS_CROPPED_DIR, constants.TRAIN_DATA,
-                   training=True, instance_idx=constants.train_indices_of_first_5_classes),
+                   training=True, instance_idx=constants.train_indices_of_classes_tb_trained),
     output_signature=output_signature1
 )
 
 train_ds_2 = tf.data.Dataset.from_generator(
     OpticalFlowStream(constants.TRAIN_VIDS_CROPPED_DIR, constants.TRAIN_DATA,
-                      training=True, instance_idx=constants.train_indices_of_first_5_classes),
+                      training=True, instance_idx=constants.train_indices_of_classes_tb_trained),
     output_signature=output_signature2
 )
 
@@ -50,13 +50,13 @@ train_ds_2 = train_ds_2.batch(NUM_VIDS_PER_BATCH)
 
 val_ds_1 = tf.data.Dataset.from_generator(
     FrameGenerator(constants.VAL_VIDS_CROPPED_DIR, constants.VAL_DATA,
-                   training=False, instance_idx=constants.val_indices_of_first_5_classes),
+                   training=False, instance_idx=constants.val_indices_of_classes_tb_trained),
     output_signature=output_signature1
 )
 
 val_ds_2 = tf.data.Dataset.from_generator(
     OpticalFlowStream(constants.VAL_VIDS_CROPPED_DIR, constants.VAL_DATA,
-                      training=False, instance_idx=constants.val_indices_of_first_5_classes),
+                      training=False, instance_idx=constants.val_indices_of_classes_tb_trained),
     output_signature=output_signature2
 )
 

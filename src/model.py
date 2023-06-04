@@ -655,6 +655,15 @@ def freeze_layers(model, leave_nb_layers=50):
         layer.trainable = True
     return model
 
+def unfreeze_layers(model, leave_nb_layers=50):
+    '''
+    layers to be unfrozen can be set as a hyperparameter
+    '''
+    for layer in model.layers[:-leave_nb_layers]:
+        layer.trainable = True
+    for layer in model.layers[-leave_nb_layers:]:
+        layer.trainable = True
+    return model
 
 def TopLayer(input_shape, classes, dropout_prob):
     inputs = Input(shape=input_shape, name='top_layer_input')

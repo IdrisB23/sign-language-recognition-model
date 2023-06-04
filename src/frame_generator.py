@@ -48,7 +48,7 @@ def frames_from_video_file(video_path: pathlib.Path, n_frames: int = 74, output_
 
 
 class FrameGenerator:
-    def __init__(self, videos_dir: pathlib.Path, idx_2_label: dict, training: bool = False, instance_idx: list = [], n_frames: int = 74):
+    def __init__(self, classes, videos_dir: pathlib.Path, idx_2_dataInstance: dict, training: bool = False, instance_idx: list = [], n_frames: int = 74):
         '''
         Reads frames from the given (root) path, 
         and returns them coupled with their associated label/class
@@ -60,12 +60,12 @@ class FrameGenerator:
             training: determine whether the training dataset is being generated
         '''
         self.videos_dir = videos_dir
-        self.idx_2_label = idx_2_label
+        self.idx_2_dataInstance = idx_2_dataInstance
         self.training = training
         self.instance_idx = instance_idx
         self.n_frames = n_frames
         self.class_ids = dict((name, idx)
-                              for idx, name in enumerate(constants.CLASSES))
+                              for idx, name in enumerate(sorted(classes)))
 
     def get_videos_files_and_class_names(self):
         video_file_paths = []
@@ -74,7 +74,7 @@ class FrameGenerator:
             video_file_paths.extend(self.videos_dir.glob(f'*/{idx}.mp4'))
             augmented_vid_file_paths = list(self.videos_dir.glob(f'*/{idx}*.avi')) # augmented videos as well
             video_file_paths.extend(augmented_vid_file_paths)
-            classes.extend((len(augmented_vid_file_paths) + 1) * [self.idx_2_label[idx]['clean_text']]) # add as many classes as the original and augmented videos
+            classes.extend((len(augmented_vid_file_paths) + 1) * [self.idx_2_dataInstance[idx]['clean_text']]) # add as many classes as the original and augmented videos
         return video_file_paths, classes
 
     def __call__(self):

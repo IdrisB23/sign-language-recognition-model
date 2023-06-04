@@ -73,7 +73,8 @@ def trim_video(in_vid: pathlib.Path, out_vid: pathlib.Path, start: int, end: int
     '''second implementation: only extract and trim video as that is the only relevant part anyways'''
     command_tb_run = f'ffmpeg -i {in_vid} -vf trim={start}:{end} {out_vid}'
     try:
-        subp_output = subprocess.run(command_tb_run, shell=True)
+        subp_output = subprocess.run(command_tb_run  # , shell=True
+                                     )
     except Exception as exc:
         print(
             f'[An exception of type {type(exc).__name__} occurred. Arguments:\n{exc.args!r}]')
@@ -107,7 +108,8 @@ def crop_video(in_vid: pathlib.Path, out_vid: pathlib.Path, x: float, y: float, 
     '''second implementation: only extract and trim video as that is the only relevant part anyways'''
     command_tb_run = f'ffmpeg -i {in_vid} -vf crop=w={width}:h={height}:x={x}:y={y} {out_vid}'
     try:
-        subp_output = subprocess.run(command_tb_run, shell=True)
+        subp_output = subprocess.run(command_tb_run  # , shell=True
+                                     )
     except Exception as exc:
         print(
             f'[An exception of type {type(exc).__name__} occurred. Arguments:\n{exc.args!r}]')
@@ -143,7 +145,8 @@ def pafy_download_vid_wo_audio(url: str, downloaded_vid_path: pathlib.Path, i, i
 
 def yt_dlp_download_vid_wo_audio(url: str, output_file: pathlib.Path):
     command_tb_run = f'yt-dlp --format "bv[ext=mp4]" -o {output_file} {url}'
-    subp_output = subprocess.run(command_tb_run, shell=True)
+    subp_output = subprocess.run(command_tb_run  # , shell=True
+                                 )
     return subp_output.returncode
 
 
@@ -156,6 +159,8 @@ def download_unique_vid_of_instance_and_update_map(i: int, instance, IDX_2_INIT_
     if dwnlnd_idx == -1:
         try:
             downloaded_vid_path = DOWNLOADED_DIR / (str(i) + '.mp4')
+            if downloaded_vid_path.is_file():
+                downloaded_vid_path.unlink()
             if DWNLD_BACKEND == 'yt-dlp':
                 ret_code = yt_dlp_download_vid_wo_audio(
                     vid_url, downloaded_vid_path)
@@ -213,7 +218,8 @@ def download_unique_vids_of_instances_in_range_and_return_vids_over_threshold(st
 
     for i in range(start, end):
         instance = DATA[i]
-        result = download_unique_vid_of_instance_and_update_map(i, instance)
+        result = download_unique_vid_of_instance_and_update_map(
+            i, instance, IDX_2_INIT_DWNLD_IDX_W_SAME_URL)
         if not result is None:
             vids_w_size_over_threshold.append(i)
 
@@ -247,6 +253,8 @@ def trim_instance_vid_and_update_map(i: int, instance, INSTANCE_2_TRIMMED, data_
         clip_start = instance['start_time']
         clip_end = instance['end_time']
         trimmed_vid_path = class_path / f'{i}.mp4'
+        if trimmed_vid_path.is_file():
+            trimmed_vid_path.unlink()
         trim_video(vid_path, trimmed_vid_path, clip_start, clip_end)
         INSTANCE_2_TRIMMED[str(i)] = trimmed_vid_path.resolve().__str__()
     # if it exists in instance2trimmed, then it's already been trimmed before therefore skip it
@@ -319,6 +327,8 @@ def crop_vid_for_instance_and_update_map(i: int, instance, INSTANCE_2_CROPPED, d
         if not class_path.exists():
             class_path.mkdir(parents=True)
         out_vid_path: pathlib.Path = class_path / (str(i) + '.mp4')
+        if out_vid_path.is_file():
+            out_vid_path.unlink()
         print(i, ', cropping from source =>', in_vid_path)
         crop_video(in_vid_path, out_vid_path,
                    x_topleft, y_topleft, width, height)
@@ -391,7 +401,7 @@ def check_for_DS_type(train_val_test: str):
         CROPPED_DIR = constants.TRAIN_VIDS_CROPPED_DIR
         IDX_2_INIT_DWNLD_IDX_W_SAME_URL_PATH = constants.TRAIN_IDX_2_INIT_DWNLD_PATH
         INSTANCE_2_TRIMMED_PATH = constants.TRAIN_INSTANCE_2_TRIMMED_PATH
-        INSTANCE_2_CROPPED_PATH = constants.TEST_INSTANCE_2_CROPPED_PATH
+        INSTANCE_2_CROPPED_PATH = constants.TRAIN_INSTANCE_2_CROPPED_PATH
 
 
 def dwnld_trim_crop_pipeline_indices(indices=[], train_val_test: str = 'train'):
@@ -432,7 +442,7 @@ def dwnld_trim_crop_pipeline_indices(indices=[], train_val_test: str = 'train'):
     # clean_up_files_in_dir(DOWNLOADED_DIR)
 
     # Cropping Videos to the desired region of interest and saving them
-    INSTANCE_2_CROPPED = crop_vids_for_indices_instances_and_return_updated_map(
+    crop_vids_for_indices_instances_and_return_updated_map(
         indices, data_package)
 
     # Save instance_2_cropped MAP as JSON file
@@ -462,8 +472,9 @@ def dwnld_trim_crop_pipeline_range(range_start: int = 0, range_end: int = 0, tra
     }
 
     # Download the unique instance videos for preprocessing
-    vids_w_size_over_threshold = download_unique_vids_of_instances_in_range_and_return_vids_over_threshold(
-        range_start, range_end, data_package)
+    vids_w_size_over_threshold = []
+    # vids_w_size_over_threshold = download_unique_vids_of_instances_in_range_and_return_vids_over_threshold(
+    #     range_start, range_end, data_package)
     # Save url_2_downloaded MAP as JSON file
     save_dict_as_JSON_file(IDX_2_INIT_DWNLD_IDX_W_SAME_URL_PATH,
                            IDX_2_INIT_DWNLD_IDX_W_SAME_URL)
@@ -478,7 +489,7 @@ def dwnld_trim_crop_pipeline_range(range_start: int = 0, range_end: int = 0, tra
     # clean_up_files_in_dir(DOWNLOADED_DIR)
 
     # Cropping Videos to the desired region of interest and saving them
-    INSTANCE_2_CROPPED = crop_vids_for_instances_in_range_and_return_updated_map(
+    crop_vids_for_instances_in_range_and_return_updated_map(
         range_start, range_end, data_package)
 
     # Save instance_2_cropped MAP as JSON file

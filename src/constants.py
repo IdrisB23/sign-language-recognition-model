@@ -4,6 +4,7 @@ import collections
 from utilities import create_dummy_JSON_file, read_dict_from_JSON
 
 MODEL_INPUT_IMG_SIZE = (224, 224)
+NB_AUGMENTATIONS = 2
 
 DATA_DIR = pathlib.Path('data')
 
@@ -108,37 +109,41 @@ TRAIN_DATA = read_dict_from_JSON(TRAIN_DATA_PATH)
 VAL_DATA = read_dict_from_JSON(VAL_DATA_PATH)
 TEST_DATA = read_dict_from_JSON(TEST_DATA_PATH)
 
-FIRST_5_CLASSES = CLASSES[:5]
+
+NUM_CLASSES = 3
+# CLASSES_TB_TRAINED_UPON = CLASSES[:NUM_CLASSES]
+CLASSES_TB_TRAINED_UPON = ["i", 'love', 'you', "apple"]
 INSTANCES_PER_CLASS = 10
+
 label_2_nbInstances = collections.defaultdict(list)
-train_indices_of_first_5_classes = []
+train_indices_of_classes_tb_trained = []
 for i, instance in enumerate(TRAIN_DATA):
-    if instance['label'] < 5:
+    if instance['clean_text'] in CLASSES_TB_TRAINED_UPON:
         label_ = instance['label']
         tmp = label_2_nbInstances[label_]
         tmp.append(i)
-        train_indices_of_first_5_classes.append(i)
+        train_indices_of_classes_tb_trained.append(i)
 
-train_indices_of_first_5_classes = np.array(train_indices_of_first_5_classes)
+train_indices_of_classes_tb_trained = np.array(train_indices_of_classes_tb_trained)
 
 val_label_2_nbInstances = collections.defaultdict(list)
-val_indices_of_first_5_classes = []
+val_indices_of_classes_tb_trained = []
 for i, instance in enumerate(VAL_DATA):
-    if instance['label'] < 5:
+    if instance['clean_text'] in CLASSES_TB_TRAINED_UPON:
         label_ = instance['label']
         tmp = val_label_2_nbInstances[label_]
         tmp.append(i)
-        val_indices_of_first_5_classes.append(i)
+        val_indices_of_classes_tb_trained.append(i)
 
-val_indices_of_first_5_classes = np.array(val_indices_of_first_5_classes)
+val_indices_of_classes_tb_trained = np.array(val_indices_of_classes_tb_trained)
 
 test_label_2_nbInstances = collections.defaultdict(list)
-test_indices_of_first_5_classes = []
+test_indices_of_classes_tb_trained = []
 for i, instance in enumerate(TEST_DATA):
-    if instance['label'] < 5:
+    if instance['clean_text'] in CLASSES_TB_TRAINED_UPON:
         label_ = instance['label']
         tmp = test_label_2_nbInstances[label_]
         tmp.append(i)
-        test_indices_of_first_5_classes.append(i)
+        test_indices_of_classes_tb_trained.append(i)
 
-test_indices_of_first_5_classes = np.array(test_indices_of_first_5_classes)
+test_indices_of_classes_tb_trained = np.array(test_indices_of_classes_tb_trained)

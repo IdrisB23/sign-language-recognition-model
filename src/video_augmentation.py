@@ -52,7 +52,7 @@ def augment_video(input_path: pathlib.Path, output_path: pathlib.Path):
     # End: 0-pad all frames in videos if their frames are smaller than the cropping size
 
     seq = va.Sequential([
-        va.RandomCrop(size=MODEL_INPUT_IMG_SIZE),
+        #va.RandomCrop(size=MODEL_INPUT_IMG_SIZE),
         va.RandomRotate(degrees=10),
         sometimes(va.HorizontalFlip())
     ])
@@ -77,3 +77,11 @@ def augment_video(input_path: pathlib.Path, output_path: pathlib.Path):
         )
     process.stdin.close()
     process.wait()
+
+
+def main():
+    pass
+
+
+if __name__ == '__main__':
+    main()

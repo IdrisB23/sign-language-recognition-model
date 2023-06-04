@@ -1,4 +1,4 @@
-from frame_generator import FrameGenerator
+from frame_generator import FrameGenerator, format_frames
 from constants import MODEL_INPUT_IMG_SIZE
 
 import pathlib
@@ -58,31 +58,39 @@ def compute_optical_flow(prev, curr):
 
 
 def preprocess_flow(flow_frame):
-    frame_resized = resize(flow_frame)
-    # crop the frame to the size the model expects
-    frame_cropped = crop_center(
-        frame_resized, *MODEL_INPUT_IMG_SIZE)
+    # replace by tf.image.resize as it does downsampling which is better than cropping centrually and losing information
+
+    # frame_resized = resize(flow_frame)
+    # # crop the frame to the size the model expects
+    # frame_cropped = crop_center(
+    #     frame_resized, MODEL_INPUT_IMG_SIZE)
+
+    frame_cropped = format_frames(flow_frame, MODEL_INPUT_IMG_SIZE)
     # no rescaling here unlike preprocess_rgb -> but there is reshaping of the flow frame data
     frame_reshaped = np.reshape(
         frame_cropped, (1, *MODEL_INPUT_IMG_SIZE, 2))
     return frame_reshaped
 
 
+def compute_video_optical_flow(video_frames):
+    prev = video_frames[0]
+    prev = cv2.cvtColor(prev, cv2.COLOR_RGB2GRAY)
+    flow_stream = np.zeros((1, *MODEL_INPUT_IMG_SIZE, 2)) # result
+    for curr in video_frames[1:]:
+        curr = cv2.cvtColor(curr, cv2.COLOR_RGB2GRAY)
+        flow = compute_optical_flow(prev, curr)
+        flow = preprocess_flow(flow)
+        flow_stream = np.append(flow_stream, flow, axis=0)
+        prev = curr
+    return flow_stream[1:, :, :, :]
+
+
 class OpticalFlowStream:
-    def __init__(self, videos_dir: pathlib.Path, idx_2_label: dict, training: bool = False, instance_idx: list = [], n_frames: int = 74):
+    def __init__(self, classes, videos_dir: pathlib.Path, idx_2_label: dict, training: bool = False, instance_idx: list = [], n_frames: int = 74):
         self.frame_generator = FrameGenerator(
-            videos_dir, idx_2_label, training, instance_idx, n_frames)
+            classes, videos_dir, idx_2_label, training, instance_idx, n_frames)
 
     def __call__(self):
         for video_frames, label in self.frame_generator():
-            prev = video_frames[0]
-            prev = cv2.cvtColor(prev, cv2.COLOR_RGB2GRAY)
-            flow_stream = np.zeros((1, *MODEL_INPUT_IMG_SIZE, 2))
-            for curr in video_frames[1:]:
-                curr = cv2.cvtColor(curr, cv2.COLOR_RGB2GRAY)
-                flow = compute_optical_flow(prev, curr)
-                flow = preprocess_flow(flow)
-                flow_stream = np.append(flow_stream, flow, axis=0)
-                prev = curr
-            flow_stream = flow_stream[1:, :, :, :]
+            flow_stream = compute_video_optical_flow(video_frames)
             yield flow_stream, label
